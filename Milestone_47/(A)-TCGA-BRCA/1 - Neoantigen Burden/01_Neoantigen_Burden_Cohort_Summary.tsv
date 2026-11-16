@@ -1,0 +1,8 @@
+metric	n	mean	median	q1	q3	min	max	total
+Peptide-HLA pairs	80	69.16	41.0	26.75	67.5	7	1064	5533
+Unique mutant peptides	80	69.12	41.0	26.75	67.5	7	1064	5530
+Neoantigen-generating variants	80	68.53	40.5	26.0	67.25	7	1053	5482
+Missense-derived pairs	80	63.27	38.0	23.0	62.0	7	865	5062
+Frameshift-derived pairs	80	5.26	2.0	1.0	4.0	0	193	421
+In-frame indel-derived pairs	80	0.62	0.0	0.0	1.0	0	7	50
+Other-derived pairs	80	0	0.0	0.0	0.0	0	0	0
