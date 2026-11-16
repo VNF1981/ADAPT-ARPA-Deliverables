@@ -1,0 +1,12 @@
+metric	value	denominator	percentage
+Patients	80		
+Filtered pVACseq rows	5596		
+Distinct mutation–peptide–HLA candidates	5533		
+Candidates with available IC50	5533	5533	100.00
+Strong (≤50 nM)	1064	5533	19.23
+Intermediate (50–500 nM)	2631	5533	47.55
+Weak (>500 nM)	1838	5533	33.22
+Unavailable	0	5533	0.00
+Median IC50 (nM; available)	182.12	5533	
+Candidates with percentile rank	5531	5533	99.96
+Median percentile rank (available)	0.70	5531	

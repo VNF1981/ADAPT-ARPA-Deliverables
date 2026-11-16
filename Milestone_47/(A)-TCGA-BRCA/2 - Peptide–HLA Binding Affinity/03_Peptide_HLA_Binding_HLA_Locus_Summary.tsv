@@ -1,0 +1,4 @@
+hla_locus	candidates_total	affinity_assessed	strong_n	intermediate_n	weak_n	affinity_unavailable_n	strong_pct_assessed	intermediate_pct_assessed	weak_pct_assessed	median_ic50_nM	median_percentile_rank
+HLA-A	2177	2177	569	932	676	0	26.14	42.81	31.05	152.94	0.69
+HLA-B	1562	1562	224	756	582	0	14.34	48.40	37.26	216.94	0.63
+HLA-C	1794	1794	271	943	580	0	15.11	52.56	32.33	185.93	0.81
