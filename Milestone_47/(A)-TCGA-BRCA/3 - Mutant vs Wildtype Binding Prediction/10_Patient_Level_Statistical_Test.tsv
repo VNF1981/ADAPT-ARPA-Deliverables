@@ -1,0 +1,6 @@
+Measure	Value
+Patient-level Wilcoxon comparison	Median per-patient log2(WT IC50 / MT IC50) vs 0
+N evaluable patients	80
+Wilcoxon statistic	219.5
+Two-sided p-value	1.8523708868954606e-11
+Median patient log2 ratio	0.11635000000000001

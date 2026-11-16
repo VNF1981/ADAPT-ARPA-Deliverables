@@ -1,0 +1,5 @@
+Subtype	Patients	Total candidate rows	Paired valid rows	Paired valid (%)	Missing or invalid WT/MT	MT stronger (ratio >1)	MT >=2-fold stronger	MT >=10-fold stronger	WT stronger (ratio <1)	Equal binding (ratio =1)	MT strong <=50 nM	MT <=500 nM	WT <=500 nM	MT-only binder <=500 nM	WT-only binder <=500 nM	Both bind <=500 nM	Neither binds <=500 nM	Median WT/MT ratio	Median MT IC50 (nM)	Median WT IC50 (nM)	Median log2(WT/MT)
+HR+/HER2+	20	1159	1121	96.72	38	656	191	24	465	0	206	717	676	87	46	630	358	1.0757	211.74	255.11	0.1052
+HR+/HER2-	20	1017	976	95.97	41	579	191	24	395	2	143	604	566	72	34	532	338	1.0917	236.22	300.81	0.1266
+HR-/HER2+	20	1267	1234	97.4	33	738	248	37	495	1	214	821	759	96	34	725	379	1.1106	198.73	256.52	0.1513
+TNBC	20	2153	1968	91.41	185	1167	369	82	801	0	363	1325	1237	149	61	1176	582	1.0956	177.64	207.43	0.1317
