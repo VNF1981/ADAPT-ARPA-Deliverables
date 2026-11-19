@@ -1,0 +1,22 @@
+{
+  "analysis": "Analysis 6: integrated computational candidate prioritization",
+  "input_analysis_3": "/scratch/vnikoone/01_ARPA/02_TCGA/03_BRCA/02_immunogenomics/05_Downstream_Analysis/02_80_patients/03_results/03_Mutant_vs_Wildtype_Binding/01_All_Candidate_Mutant_WT_Binding.tsv",
+  "input_analysis_5": "/scratch/vnikoone/01_ARPA/02_TCGA/03_BRCA/02_immunogenomics/05_Downstream_Analysis/02_80_patients/03_results/05_pMHC_TCR_Prediction/03_Peptide_HLA_Recognition_Summary.tsv",
+  "input_patient_summary": "/scratch/vnikoone/01_ARPA/02_TCGA/03_BRCA/02_immunogenomics/05_Downstream_Analysis/02_80_patients/03_results/05_pMHC_TCR_Prediction/02_pMHC_TCR_Patient_Summary.tsv",
+  "input_original_pMTnet_predictions": "/scratch/vnikoone/01_ARPA/02_TCGA/03_BRCA/02_immunogenomics/08_pMHC_TCR_screening/01_old_pipeline/03_pMTnet/05_downstream_analysis/02_results/01_TCGA_BRCA_80_pMTnet_Combined_Predictions.tsv",
+  "analysis_3_rows": 5596,
+  "distinct_pMHC": 5531,
+  "duplicate_analysis_3_rows_collapsed": 65,
+  "matched_pMHC": 5459,
+  "unmatched_pMHC": 72,
+  "raw_negative_rank_warning": "Analysis 5 reports 37 negative raw ranks that were transformed to summary ranks; review original transformation before making biological claims about top zero-rank hits",
+  "TCR_test_count_warning": "More tested TCRs increases opportunity to find >=1 low percentile rank; tiers are exploratory and not calibrated probabilities",
+  "binding_warning": "Predicted HLA binding is not observed tumor-cell presentation",
+  "gene_expression": "Not assessed: only 8 of 80 patients had usable NextNEOpi TPM outputs at analysis time",
+  "original_pMTnet": "Uses original pMTnet, not pMTnet-Omni",
+  "mutation_provenance": "Duplicate patient-peptide-HLA rows are collapsed using best mutant IC50; source_prediction_rows and source_genes show multiplicity",
+  "screening_denominator": "Tier A+B fraction uses all matched pMTnet-evaluated pMHC combinations",
+  "rank_thresholds": "<=0.01 primary; <=0.05 exploratory; not probabilities of binding",
+  "rank_order": "Tier A then B then C then D then E then F; within tier proportion of tested TCRs with rank <=0.01 (descending), then minimum rank (ascending), mutant IC50 (ascending)",
+  "missing_TCR_handling": "Unscreened means missing prediction, not no predicted recognition"
+}

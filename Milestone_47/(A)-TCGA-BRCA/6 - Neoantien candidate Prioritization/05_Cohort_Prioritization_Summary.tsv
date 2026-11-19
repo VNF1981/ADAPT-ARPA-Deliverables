@@ -1,0 +1,19 @@
+metric	value
+Patients in TCGA-BRCA cohort	80
+Patients with usable pMTnet predictions	78
+Patients without TCR predictions	2
+Input Analysis 3 prediction rows	5596
+Distinct patient-specific mutant peptide-HLA combinations	5531
+Patient-peptide-HLA combinations evaluated by pMTnet	5459
+Class I mutant HLA binders (IC50 <=500 nM), all 80 patients	3694
+Tier A: HLA binder + rank <=0.01 + mutant-only HLA binder	171
+Tier B: HLA binder + rank <=0.01, excluding tier A	1130
+Tier A+B: high-priority candidates	1301
+Tier A+B as percentage of TCR-evaluated candidate pMHCs	23.83
+Tier C: HLA binder + rank <=0.05 but not <=0.01	1088
+Tier D: HLA binder without rank <=0.05	1256
+Tier E: weak HLA binder with rank <=0.01	647
+Tier F: weak HLA binder without rank <=0.01	1167
+Unscreened candidate pMHC combinations	72
+Candidate gene expression assessed	No
+Experimentally confirmed T-cell recognition	No
