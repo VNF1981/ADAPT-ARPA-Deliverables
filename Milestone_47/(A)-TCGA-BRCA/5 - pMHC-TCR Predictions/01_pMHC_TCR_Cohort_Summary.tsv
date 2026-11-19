@@ -1,0 +1,20 @@
+metric	value
+Patients in cohort	80.0
+Patients with pMTnet predictions	78.0
+Patients without usable predictions	2.0
+Evaluated TCR-peptide-HLA interactions	345374.0
+Unique TCR CDR3beta sequences across cohort	5211.0
+Distinct patient-peptide-HLA combinations	5459.0
+Interactions with pMTnet rank <= 0.01	3519.0
+Interactions with pMTnet rank <= 0.05	17083.0
+Interactions with pMTnet rank <= 0.10	34192.0
+Fraction of interactions with rank <= 0.01 (%)	1.02
+Fraction of interactions with rank <= 0.05 (%)	4.95
+Fraction of interactions with rank <= 0.10 (%)	9.9
+Patient-peptide-HLA combinations with at least one rank <= 0.01	1948.0
+Patient-peptide-HLA combinations with at least one rank <= 0.05	3626.0
+Patient-peptide-HLA combinations with at least one rank <= 0.10	4222.0
+Raw pMTnet ranks below zero	37.0
+Missing raw pMTnet ranks	0.0
+Rows with different raw versus summary rank	37.0
+Patients with receptor subtype available	78.0

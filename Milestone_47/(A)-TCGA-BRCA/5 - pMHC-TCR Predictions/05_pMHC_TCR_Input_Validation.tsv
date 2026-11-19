@@ -1,0 +1,14 @@
+item	value
+Source combined predictions	/scratch/vnikoone/01_ARPA/02_TCGA/03_BRCA/02_immunogenomics/08_pMHC_TCR_screening/01_old_pipeline/03_pMTnet/05_downstream_analysis/02_results/01_TCGA_BRCA_80_pMTnet_Combined_Predictions.tsv
+Source patient manifest	/scratch/vnikoone/01_ARPA/02_TCGA/03_BRCA/02_immunogenomics/05_Downstream_Analysis/02_80_patients/02_data/01_TCGA_BRCA_80_Input_Manifest.tsv
+Expected interactions	345374
+Observed interactions	345374
+Expected screened patients	78
+Observed screened patients	78
+Missing patients	TCGA-C8-A137, TCGA-B6-A1KF
+Rank interpretation	Lower percentile rank indicates higher predicted pMHC-TCR recognition
+Rank thresholds	0.01, 0.05, 0.10: exploratory prioritization, not calibrated binding probability
+Rank transformation	Uses Rank_for_summary from original completed pMTnet downstream analysis
+Raw negative ranks	37
+No negative-control model runs	Do not interpret unscreened or high-rank pairs as experimentally confirmed negatives
+TCR source	Bulk RNA-seq TRUST4 CDR3beta; no alpha-beta pairing
