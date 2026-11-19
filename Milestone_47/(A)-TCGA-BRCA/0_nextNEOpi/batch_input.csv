@@ -1,0 +1,16 @@
+sampleName,bam,sampleType,HLAfile,sex
+TCGA-AR-A0TY,/scratch/vnikoone/grp_adapt/brca/wxs/283e3f33-fcc1-4bcb-96bb-f0fe27268425/f915733b-aaf4-406d-af52-00de113e8e0c_wxs_gdc_realn.bam,tumor_DNA,,NA
+TCGA-AR-A0TY,/scratch/vnikoone/grp_adapt/brca/wxs/e2573c46-df66-4d81-84be-b0fda621a100/f5cfd725-897e-4728-91bc-ba3957d43764_wxs_gdc_realn.bam,normal_DNA,,NA
+TCGA-AR-A0TY,/scratch/vnikoone/grp_adapt/brca/rnaseq/8848458b-9bf3-42f6-9974-4c1d2690df97/af58b506-df1d-4221-964d-76dbade6ab85.rna_seq.genomic.gdc_realn.bam,tumor_RNA,,NA
+TCGA-AO-A03P,/scratch/vnikoone/grp_adapt/brca/wxs/8f593339-1fde-4536-a2bd-ab3dd954da6e/185c5e15-c068-4a72-8d5e-468624bf958a_wxs_gdc_realn.bam,tumor_DNA,,NA
+TCGA-AO-A03P,/scratch/vnikoone/grp_adapt/brca/wxs/8551230a-9a7f-473c-9fc4-892bef9b73fe/bac92eb4-e818-4d79-b4b0-b10c31ba6d4e_wxs_gdc_realn.bam,normal_DNA,,NA
+TCGA-AO-A03P,/scratch/vnikoone/grp_adapt/brca/rnaseq/5719bdac-6807-4ea5-8edb-eda483157173/ea55206b-29c6-4a8b-9219-cfd28c29117a.rna_seq.genomic.gdc_realn.bam,tumor_RNA,,NA
+TCGA-C8-A1HI,/scratch/vnikoone/grp_adapt/brca/wxs/cddaccdf-d6ba-402b-95cd-471172723d29/75dc3bff-75da-4734-b930-a18fd3d1ebfe_wxs_gdc_realn.bam,tumor_DNA,,NA
+TCGA-C8-A1HI,/scratch/vnikoone/grp_adapt/brca/wxs/dc1554ad-41de-466b-b470-f56592305447/6944644c-a43b-4a5b-b506-7427227f3eb0_wxs_gdc_realn.bam,normal_DNA,,NA
+TCGA-C8-A1HI,/scratch/vnikoone/grp_adapt/brca/rnaseq/b7abee81-11ca-4a35-9fed-69835296e8d8/0633890f-584c-43d9-aa3f-7a6555533dd8.rna_seq.genomic.gdc_realn.bam,tumor_RNA,,NA
+TCGA-C8-A1HG,/scratch/vnikoone/grp_adapt/brca/wxs/c45c651a-7caf-42a4-8095-45a43d109cb0/ba937e3d-30b7-4446-84fb-5f77831a4843_wxs_gdc_realn.bam,tumor_DNA,,NA
+TCGA-C8-A1HG,/scratch/vnikoone/grp_adapt/brca/wxs/60f856d0-b505-436c-ab02-e1742fb32b44/bfecb97d-fcf8-4508-8c7a-b2568f6e3972_wxs_gdc_realn.bam,normal_DNA,,NA
+TCGA-C8-A1HG,/scratch/vnikoone/grp_adapt/brca/rnaseq/03e453a4-b25d-4f08-93f8-03ae36a426e2/27f20469-cbf5-417f-922a-19cf9e8b790c.rna_seq.genomic.gdc_realn.bam,tumor_RNA,,NA
+TCGA-B6-A0WW,/scratch/vnikoone/grp_adapt/brca/wxs/fb196ea5-8fec-4cf8-946f-242db245b792/e9d6f59d-7d87-4fda-ab6f-e9c2501b8600_wxs_gdc_realn.bam,tumor_DNA,,NA
+TCGA-B6-A0WW,/scratch/vnikoone/grp_adapt/brca/wxs/154c3a04-b676-4857-820a-46eea69de70e/1d66ccf6-8c14-405d-a686-07122687567f_wxs_gdc_realn.bam,normal_DNA,,NA
+TCGA-B6-A0WW,/scratch/vnikoone/grp_adapt/brca/rnaseq/85d2c10f-c532-43d5-9588-9673c323ff77/9c1779d3-6e10-413b-9df9-a9378862d8c4.rna_seq.genomic.gdc_realn.bam,tumor_RNA,,NA
