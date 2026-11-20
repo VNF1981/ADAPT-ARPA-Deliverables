@@ -2,8 +2,10 @@ import csv
 import json
 import math
 import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
+from statistics import median
 
 import matplotlib
 matplotlib.use("Agg")
@@ -12,19 +14,18 @@ import numpy as np
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 
-BASE = Path(os.environ.get("BRCA80_BASE", "Path to parent dir"))
+BASE = Path(os.environ.get("BRCA80_BASE", Path(__file__).resolve().parents[2]))
 DATA = BASE / "02_data/02_pVACseq"
 OUT = BASE / "03_results/04_Neoantigen_Expression"
-OUT.mkdir(parents=True, exist_ok=True)
+ST = OUT / "00_StringTie_Quantification"
 SUMMARY = DATA / "03_TCGA_BRCA_Neoantigen_Patient_Summary.tsv"
 MANIFEST = BASE / "02_data/01_TCGA_BRCA_80_Input_Manifest.tsv"
 TPM_THRESHOLD = 1.0
-RNA_ALT_THRESHOLD = 3
 BINDING_THRESHOLD = 500.0
+RNA_ALT_THRESHOLD = 3
+OUT.mkdir(parents=True, exist_ok=True)
 
 EXP_COLS = {
-    "transcript_tpm": ["Transcript Expression", "Transcript Expression (TPM)", "Transcript TPM", "transcript_expression", "transcript_tpm"],
-    "gene_tpm": ["Gene Expression", "Gene Expression (TPM)", "Gene TPM", "gene_expression", "gene_tpm"],
     "rna_vaf": ["Tumor RNA VAF", "Tumor RNA Variant Allele Frequency", "tumor_rna_vaf"],
     "rna_depth": ["Tumor RNA Depth", "Tumor RNA Coverage", "tumor_rna_depth"],
     "rna_alt": ["Tumor RNA Alt Read Support", "Tumor RNA Alt Reads", "Tumor RNA ALT Reads", "tumor_rna_alt_reads"],
@@ -32,264 +33,299 @@ EXP_COLS = {
 }
 
 def choose(columns, aliases):
-    normalized = {"".join(c.lower().split()): c for c in columns}
-    for name in aliases:
-        if name in columns:
-            return name
-        result = normalized.get("".join(name.lower().split()))
-        if result:
-            return result
+    normalized = {"".join(x.lower().split()): x for x in columns}
+    for alias in aliases:
+        if alias in columns:
+            return alias
+        found = normalized.get("".join(alias.lower().split()))
+        if found:
+            return found
     return None
 
-def value_number(value):
-    if value is None or str(value).strip().lower() in {"", ".", "na", "n/a", "nan", "none", "null"}:
-        return None
+def numeric(value):
     try:
-        number = float(str(value).strip())
-        return number if math.isfinite(number) and number >= 0 else None
-    except ValueError:
+        result = float(value)
+        return result if math.isfinite(result) and result >= 0 else None
+    except (TypeError, ValueError):
         return None
 
 def read_table(path):
     with path.open(newline="") as f:
         return list(csv.DictReader(f, delimiter="\t"))
 
-def write_table(name, rows, columns):
+def write_table(name, rows, fields):
     with (OUT / name).open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=columns, delimiter="\t", extrasaction="ignore")
+        writer = csv.DictWriter(f, delimiter="\t", fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
-def percent(n, d):
-    return round(100.0 * n / d, 2) if d else None
+def pct(a, b):
+    return round(100 * a / b, 2) if b else None
 
-def display(value, places=2):
-    if value is None:
-        return "NA"
-    if isinstance(value, float):
-        return f"{value:.{places}f}"
-    return str(value)
+def clean_id(value):
+    return str(value).split(".")[0].strip()
 
-def median(values):
-    return float(np.median(values)) if values else None
+def ids(value, prefix):
+    return set(re.findall(r"\b" + prefix + r"\d+(?:\.\d+)?\b", str(value)))
 
-def tpm_label(record):
-    if record["transcript_tpm"] is not None:
-        return record["transcript_tpm"], "Transcript"
-    if record["gene_tpm"] is not None:
-        return record["gene_tpm"], "Gene proxy"
-    return None, "Unavailable"
+def gtf_attributes(text):
+    return dict(re.findall(r'(\S+)\s+"([^"]*)"', text))
 
-def make_doc(cohort, patient_rows, source_rows):
+def load_stringtie(pid, wanted_transcripts):
+    folder = ST / pid
+    gene_file = folder / f"{pid}.gene_abundance.tsv"
+    transcript_file = folder / f"{pid}.transcripts.gtf"
+    done_file = folder / f"{pid}.complete"
+    if not all(f.is_file() and f.stat().st_size > 0 for f in (gene_file, transcript_file, done_file)):
+        raise RuntimeError(f"{pid}: incomplete StringTie outputs")
+    gene_by_id = {}
+    gene_names = defaultdict(list)
+    with gene_file.open(newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        if not reader.fieldnames or not {"Gene ID", "Gene Name", "TPM"}.issubset(reader.fieldnames):
+            raise RuntimeError(f"{pid}: unexpected gene TPM header: {reader.fieldnames}")
+        for row in reader:
+            tpm = numeric(row["TPM"])
+            if tpm is None:
+                raise RuntimeError(f"{pid}: invalid gene TPM")
+            gid = clean_id(row["Gene ID"])
+            gene_by_id[gid] = tpm
+            gene_names[row["Gene Name"]].append((gid, tpm))
+    wanted = {clean_id(x) for x in wanted_transcripts}
+    transcripts = {}
+    with transcript_file.open() as f:
+        for line in f:
+            parts = line.rstrip("\n").split("\t", 8)
+            if len(parts) < 9 or parts[2] != "transcript":
+                continue
+            attrs = gtf_attributes(parts[8])
+            tid = clean_id(attrs.get("transcript_id", ""))
+            if tid not in wanted:
+                continue
+            tpm = numeric(attrs.get("TPM"))
+            if tpm is None:
+                raise RuntimeError(f"{pid}: invalid transcript TPM for {tid}")
+            transcripts[tid] = max(tpm, transcripts.get(tid, 0))
+    return transcripts, gene_by_id, gene_names
+
+def get_expression(record, transcript_tpm, gene_tpm, gene_names):
+    matches = [(t, transcript_tpm[clean_id(t)]) for t in record["transcript_ids"] if clean_id(t) in transcript_tpm]
+    if matches:
+        tid, tpm = max(matches, key=lambda item: item[1])
+        return tpm, "Transcript", tid
+    matches = [(g, gene_tpm[clean_id(g)]) for g in record["gene_ids"] if clean_id(g) in gene_tpm]
+    if matches:
+        gid, tpm = max(matches, key=lambda item: item[1])
+        return tpm, "Gene proxy", gid
+    matches = []
+    for symbol in record["gene_names"]:
+        linked = gene_names.get(symbol, [])
+        if len({g for g, _ in linked}) == 1:
+            matches.append((symbol, linked[0][1]))
+    if matches:
+        symbol, tpm = max(matches, key=lambda item: item[1])
+        return tpm, "Gene proxy", symbol
+    return None, "Unavailable", ""
+
+def fmt(x):
+    return "NA" if x is None else f"{x:.2f}" if isinstance(x, float) else str(x)
+
+def make_doc(cohort, patients, audit):
     doc = Document()
-    sec = doc.sections[0]
-    sec.top_margin = Inches(.65)
-    sec.bottom_margin = Inches(.65)
-    sec.left_margin = Inches(.7)
-    sec.right_margin = Inches(.7)
-    normal = doc.styles["Normal"]
-    normal.font.name = "Times New Roman"
-    normal.font.size = Pt(9)
-    normal.font.color.rgb = RGBColor(0, 0, 0)
-    for name in ["Title", "Heading 1", "Heading 2"]:
+    section = doc.sections[0]
+    section.top_margin = Inches(.65)
+    section.bottom_margin = Inches(.65)
+    section.left_margin = Inches(.7)
+    section.right_margin = Inches(.7)
+    for name in ("Normal", "Title", "Heading 1", "Heading 2"):
         style = doc.styles[name]
         style.font.name = "Times New Roman"
         style.font.size = Pt(9)
         style.font.color.rgb = RGBColor(0, 0, 0)
-        style.font.bold = True
-    doc.add_paragraph("Analysis 4 — Neoantigen Expression", style="Heading 1")
-    doc.add_paragraph("RNA transcript expression is used when available; gene-level expression is labeled as a proxy. Expression-positive denotes measured TPM ≥1. RNA alternate-read evidence (≥3 reads), if available, is reported separately. Missing measurements are not treated as absence of expression. Predicted HLA binding and transcript expression do not establish presentation or T-cell recognition.")
-    def add_table(title, headers, data):
-        doc.add_paragraph(title, style="Heading 2")
-        table = doc.add_table(rows=1, cols=len(headers))
-        table.style = "Table Grid"
-        for cell, label in zip(table.rows[0].cells, headers):
-            cell.text = label
-        for values in data:
-            row = table.add_row()
-            for cell, item in zip(row.cells, values):
-                cell.text = display(item)
-        for row in table.rows:
+    doc.add_paragraph("Analysis 4 — Neoantigen Expression")
+    doc.add_paragraph("StringTie 3.0.3 quantification of tumor genomic RNA-seq alignments using GENCODE v47. Transcript TPM is used when a pVACseq transcript matches; otherwise gene TPM is reported as a proxy. When multiple candidate-associated transcripts match, the maximum TPM is used. Expression-positive means TPM ≥1. Transcript or gene expression does not establish mutant-allele expression. RNA alternate-read evidence, if available, is presented separately.")
+    def table(title, headers, rows):
+        doc.add_paragraph(title)
+        tab = doc.add_table(rows=1, cols=len(headers))
+        tab.style = "Table Grid"
+        for cell, value in zip(tab.rows[0].cells, headers):
+            cell.text = value
+        for values in rows:
+            for cell, value in zip(tab.add_row().cells, values):
+                cell.text = fmt(value)
+        for row in tab.rows:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     for run in paragraph.runs:
                         run.font.name = "Times New Roman"
                         run.font.size = Pt(8)
                         run.font.color.rgb = RGBColor(0, 0, 0)
-    add_table("Table 1. Cohort summary", ["Metric", "Value", "Denominator", "Percentage"], [[r["metric"], r["value"], r["denominator"], r["percentage"]] for r in cohort])
-    cols = ["patient_id", "subtype", "candidates_total", "tpm_assessed", "expressed_n", "expressed_pct_assessed", "unavailable_n", "median_available_tpm", "rna_alt_assessed", "rna_alt_supported_n", "expressed_and_binding_500_n"]
-    add_table("Table 2. Patient-level summary", ["Patient", "Subtype", "Candidates", "TPM assessed", "Expressed", "Expressed %", "TPM missing", "Median TPM", "RNA ALT assessed", "RNA ALT ≥3", "Expressed & IC50 ≤500"], [[r[c] for c in cols] for r in patient_rows])
-    add_table("Table 3. Expression data availability", ["Source field", "Patient files containing column", "Rows with numeric values"], [[r["field"], r["files_with_column"], r["rows_with_value"]] for r in source_rows])
+    table("Table 1. Cohort summary", ["Metric", "Value", "Denominator", "Percentage"], [[r[x] for x in ("metric", "value", "denominator", "percentage")] for r in cohort])
+    columns = ["patient_id", "subtype", "candidates_total", "tpm_assessed", "expressed_n", "expressed_pct_assessed", "unavailable_n", "median_available_tpm", "rna_alt_assessed", "rna_alt_supported_n", "expressed_and_binding_500_n"]
+    table("Table 2. Patient-level summary", ["Patient", "Subtype", "Candidates", "TPM assessed", "Expressed", "Expressed %", "Missing", "Median TPM", "RNA ALT assessed", "RNA ALT ≥3", "Expressed & IC50 ≤500"], [[r[x] for x in columns] for r in patients])
+    table("Table 3. Expression matching audit", ["Source", "Count"], [[k, v] for k, v in audit.items()])
     doc.save(OUT / "04_Neoantigen_Expression_Tables.docx")
 
 summary = read_table(SUMMARY)
 manifest = read_table(MANIFEST)
-if len(summary) != 80 or len({r["patient_id"] for r in summary}) != 80:
-    raise RuntimeError("Expected exactly 80 unique patients in the pVACseq summary")
-if len(manifest) != 80 or {r["patient_id"] for r in manifest} != {r["patient_id"] for r in summary}:
-    raise RuntimeError("The 80-patient manifest does not match the pVACseq summary")
+patient_ids = {r["patient_id"] for r in summary}
+if len(summary) != 80 or len(patient_ids) != 80:
+    raise RuntimeError("Expected 80 unique patients in pVACseq summary")
+if len(manifest) != 80 or {r["patient_id"] for r in manifest} != patient_ids:
+    raise RuntimeError("80-patient input manifest mismatch")
 subtypes = {r["patient_id"]: r.get("subtype", "") for r in manifest}
 records = []
-source_counts = Counter()
-source_files = Counter()
 raw_total = 0
 for patient in summary:
     pid = patient["patient_id"]
     files = list((DATA / pid / "MHC_Class_I").glob("*.MHC_I.filtered.tsv"))
     if len(files) != 1:
-        raise RuntimeError(f"{pid}: expected exactly one filtered pVACseq file, found {len(files)}")
+        raise RuntimeError(f"{pid}: expected one pVACseq file, got {len(files)}")
     candidates = {}
-    raw_rows = 0
     with files[0].open(newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         columns = reader.fieldnames or []
         peptide_col = choose(columns, ["MT Epitope Seq", "MT Epitope"])
         hla_col = choose(columns, ["HLA Allele", "HLA"])
-        required = ["Chromosome", "Start", "Stop", "Reference", "Variant"]
-        if not peptide_col or not hla_col or any(c not in columns for c in required):
-            raise RuntimeError(f"{pid}: candidate identifier columns missing")
-        selected = {k: choose(columns, choices) for k, choices in EXP_COLS.items()}
-        for key, column in selected.items():
-            if column:
-                source_files[key] += 1
+        transcript_col = choose(columns, ["Transcript", "Transcript ID", "Transcript Id"])
+        gene_id_col = choose(columns, ["Gene ID", "Ensembl Gene ID", "Ensembl Gene Id"])
+        gene_name_col = choose(columns, ["Gene Name", "Gene Symbol", "Hugo Symbol"])
+        fields = ["Chromosome", "Start", "Stop", "Reference", "Variant"]
+        if not peptide_col or not hla_col or any(c not in columns for c in fields):
+            raise RuntimeError(f"{pid}: candidate identifying columns missing")
+        chosen = {key: choose(columns, vals) for key, vals in EXP_COLS.items()}
+        count = 0
         for row in reader:
-            raw_rows += 1
-            mutation = tuple(str(row[c]).strip() for c in required)
-            peptide = str(row[peptide_col]).strip()
-            hla = str(row[hla_col]).strip()
+            count += 1
+            mutation = tuple(str(row[x]).strip() for x in fields)
+            peptide = row[peptide_col].strip()
+            hla = row[hla_col].strip()
             if not peptide or not hla:
-                raise RuntimeError(f"{pid}: missing peptide/HLA in candidate")
+                raise RuntimeError(f"{pid}: empty peptide/HLA")
             key = (mutation, peptide, hla)
-            measurements = {k: value_number(row[column]) if column else None for k, column in selected.items()}
-            for k in EXP_COLS:
-                if measurements[k] is not None:
-                    source_counts[k] += 1
+            measure = {k: numeric(row[alias]) if alias else None for k, alias in chosen.items()}
+            tids = ids(row.get(transcript_col, ""), "ENST")
+            gids = ids(row.get(gene_id_col, ""), "ENSG")
+            gene_label = str(row.get(gene_name_col, "")).strip() if gene_name_col else ""
+            gids.update(ids(gene_label, "ENSG"))
+            symbols = {gene_label} if gene_label and not gene_label.startswith("ENSG") and gene_label not in {"NA", "."} else set()
             if key not in candidates:
-                candidates[key] = {"patient_id": pid, "subtype": subtypes[pid], "chromosome": mutation[0], "start": mutation[1], "stop": mutation[2], "reference": mutation[3], "variant": mutation[4], "mt_epitope": peptide, "hla_allele": hla, **measurements}
-            else:
-                existing = candidates[key]
-                for k in EXP_COLS:
-                    incoming = measurements[k]
-                    previous = existing[k]
-                    if incoming is not None and (previous is None or (k == "ic50" and incoming < previous)):
-                        existing[k] = incoming
-    if raw_rows != int(patient["neo_filtered_rows"]) or len(candidates) != int(patient["neo_peptide_hla_count"]):
-        raise RuntimeError(f"{pid}: candidate counts do not match validated pVACseq summary")
-    raw_total += raw_rows
+                candidates[key] = dict(patient_id=pid, subtype=subtypes[pid], chromosome=mutation[0], start=mutation[1], stop=mutation[2], reference=mutation[3], variant=mutation[4], mt_epitope=peptide, hla_allele=hla, transcript_ids=set(), gene_ids=set(), gene_names=set(), **measure)
+            rec = candidates[key]
+            rec["transcript_ids"].update(tids)
+            rec["gene_ids"].update(gids)
+            rec["gene_names"].update(symbols)
+            for k, value in measure.items():
+                if value is not None and (rec[k] is None or (k == "ic50" and value < rec[k])):
+                    rec[k] = value
+    if count != int(patient["neo_filtered_rows"]) or len(candidates) != int(patient["neo_peptide_hla_count"]):
+        raise RuntimeError(f"{pid}: pVACseq candidate counts differ from validated summary")
+    raw_total += count
     records.extend(candidates.values())
 if len(records) != 5533 or raw_total != 5596:
-    raise RuntimeError(f"Candidate count mismatch: {len(records)} unique candidates, {raw_total} filtered rows")
+    raise RuntimeError(f"Candidate total mismatch: {len(records)} distinct, {raw_total} raw")
 
-for record in records:
-    tpm, source = tpm_label(record)
-    record["expression_tpm"] = tpm
-    record["expression_source"] = source
-    record["expression_status"] = "Not assessed" if tpm is None else "Expressed" if tpm >= TPM_THRESHOLD else "Below threshold"
-    alt = record["rna_alt"]
-    record["rna_alt_status"] = "Not assessed" if alt is None else "Supported" if alt >= RNA_ALT_THRESHOLD else "Below threshold"
-    record["binding_500"] = "NA" if record["ic50"] is None else "Yes" if record["ic50"] <= BINDING_THRESHOLD else "No"
+by_patient = defaultdict(list)
+for rec in records:
+    by_patient[rec["patient_id"]].append(rec)
+for pid, candidates in by_patient.items():
+    wanted = set().union(*(r["transcript_ids"] for r in candidates))
+    transcripts, genes, symbols = load_stringtie(pid, wanted)
+    for rec in candidates:
+        tpm, source, match = get_expression(rec, transcripts, genes, symbols)
+        rec["expression_tpm"] = tpm
+        rec["expression_source"] = source
+        rec["matched_identifier"] = match
+        rec["transcript_tpm"] = tpm if source == "Transcript" else None
+        rec["gene_tpm"] = tpm if source == "Gene proxy" else None
+        rec["expression_status"] = "Not assessed" if tpm is None else "Expressed" if tpm >= TPM_THRESHOLD else "Below threshold"
+        rec["rna_alt_status"] = "Not assessed" if rec["rna_alt"] is None else "Supported" if rec["rna_alt"] >= RNA_ALT_THRESHOLD else "Below threshold"
+        rec["binding_500"] = "NA" if rec["ic50"] is None else "Yes" if rec["ic50"] <= BINDING_THRESHOLD else "No"
+        rec["transcript_ids"] = ";".join(sorted(rec["transcript_ids"]))
+        rec["gene_ids"] = ";".join(sorted(rec["gene_ids"]))
+        rec["gene_names"] = ";".join(sorted(rec["gene_names"]))
 
-fields = ["patient_id", "subtype", "chromosome", "start", "stop", "reference", "variant", "mt_epitope", "hla_allele", "transcript_tpm", "gene_tpm", "expression_tpm", "expression_source", "expression_status", "rna_vaf", "rna_depth", "rna_alt", "rna_alt_status", "ic50", "binding_500"]
-write_table("03_Neoantigen_Expression_Candidates.tsv", records, fields)
-source_rows = [{"field": key, "files_with_column": source_files[key], "rows_with_value": source_counts[key]} for key in EXP_COLS]
-write_table("05_Expression_Field_Audit.tsv", source_rows, ["field", "files_with_column", "rows_with_value"])
-
+cols = ["patient_id", "subtype", "chromosome", "start", "stop", "reference", "variant", "mt_epitope", "hla_allele", "transcript_ids", "gene_ids", "gene_names", "matched_identifier", "transcript_tpm", "gene_tpm", "expression_tpm", "expression_source", "expression_status", "rna_vaf", "rna_depth", "rna_alt", "rna_alt_status", "ic50", "binding_500"]
+write_table("03_Neoantigen_Expression_Candidates.tsv", records, cols)
+audit = Counter(r["expression_source"] for r in records)
+audit["Patients with TPM files"] = len(by_patient)
+audit["Candidates with transcript annotations"] = sum(bool(r["transcript_ids"]) for r in records)
+audit["Candidates with gene annotations"] = sum(bool(r["gene_ids"] or r["gene_names"]) for r in records)
+write_table("05_Expression_Field_Audit.tsv", [{"field": k, "value": v} for k, v in audit.items()], ["field", "value"])
 if not any(r["expression_tpm"] is not None for r in records):
-    print("Expression inputs unavailable: none of the 5,533 candidates have numeric transcript/gene TPM in the pVACseq filtered files.")
-    print("Field audit:", OUT / "05_Expression_Field_Audit.tsv")
-    raise SystemExit("Cannot perform RNA expression analysis without actual RNA expression data; no expression plots or Word summary were generated.")
+    raise RuntimeError("No expression matches: inspect pVACseq transcript/gene identifiers")
 
 patient_rows = []
-for pid in sorted({r["patient_id"] for r in records}):
-    subset = [r for r in records if r["patient_id"] == pid]
-    with_tpm = [r for r in subset if r["expression_tpm"] is not None]
-    positive = [r for r in with_tpm if r["expression_status"] == "Expressed"]
-    with_alt = [r for r in subset if r["rna_alt"] is not None]
-    patient_rows.append({
-        "patient_id": pid, "subtype": subtypes[pid], "candidates_total": len(subset),
-        "tpm_assessed": len(with_tpm), "expressed_n": len(positive),
-        "expressed_pct_assessed": percent(len(positive), len(with_tpm)),
-        "unavailable_n": len(subset) - len(with_tpm),
-        "transcript_tpm_assessed": sum(r["transcript_tpm"] is not None for r in subset),
-        "gene_proxy_assessed": sum(r["expression_source"] == "Gene proxy" for r in subset),
-        "median_available_tpm": median([r["expression_tpm"] for r in with_tpm]),
-        "rna_alt_assessed": len(with_alt),
-        "rna_alt_supported_n": sum(r["rna_alt_status"] == "Supported" for r in with_alt),
-        "expressed_and_binding_500_n": sum(r["expression_status"] == "Expressed" and r["binding_500"] == "Yes" for r in subset)
-    })
+for pid in sorted(by_patient):
+    sub = by_patient[pid]
+    assessed = [r for r in sub if r["expression_tpm"] is not None]
+    expressed = [r for r in assessed if r["expression_tpm"] >= TPM_THRESHOLD]
+    alt = [r for r in sub if r["rna_alt"] is not None]
+    patient_rows.append(dict(patient_id=pid, subtype=subtypes[pid], candidates_total=len(sub), tpm_assessed=len(assessed), expressed_n=len(expressed), expressed_pct_assessed=pct(len(expressed), len(assessed)), unavailable_n=len(sub)-len(assessed), transcript_tpm_assessed=sum(r["expression_source"] == "Transcript" for r in sub), gene_proxy_assessed=sum(r["expression_source"] == "Gene proxy" for r in sub), median_available_tpm=median([r["expression_tpm"] for r in assessed]) if assessed else None, rna_alt_assessed=len(alt), rna_alt_supported_n=sum(r["rna_alt"] >= RNA_ALT_THRESHOLD for r in alt), expressed_and_binding_500_n=sum(r["binding_500"] == "Yes" for r in expressed)))
 patient_rows.sort(key=lambda r: (-r["expressed_n"], r["patient_id"]))
 write_table("02_Neoantigen_Expression_Patient_Summary.tsv", patient_rows, list(patient_rows[0]))
-
 assessed = [r for r in records if r["expression_tpm"] is not None]
-expressed = [r for r in assessed if r["expression_status"] == "Expressed"]
-transcript_assessed = sum(r["expression_source"] == "Transcript" for r in records)
-gene_proxy = sum(r["expression_source"] == "Gene proxy" for r in records)
-rna_alt_assessed = sum(r["rna_alt"] is not None for r in records)
-cohort = [
+expressed = [r for r in assessed if r["expression_tpm"] >= TPM_THRESHOLD]
+values = [
     ("Patients", 80, "", ""),
     ("Distinct mutation–peptide–HLA candidates", len(records), "", ""),
-    ("Candidates with expression TPM", len(assessed), len(records), percent(len(assessed), len(records))),
-    ("Candidates with transcript TPM", transcript_assessed, len(records), percent(transcript_assessed, len(records))),
-    ("Candidates with gene-level TPM proxy", gene_proxy, len(records), percent(gene_proxy, len(records))),
-    ("Expression-positive candidates (TPM ≥1)", len(expressed), len(assessed), percent(len(expressed), len(assessed))),
-    ("Below expression threshold (TPM <1)", len(assessed) - len(expressed), len(assessed), percent(len(assessed) - len(expressed), len(assessed))),
-    ("Expression unavailable", len(records) - len(assessed), len(records), percent(len(records) - len(assessed), len(records))),
-    ("Expression-positive and IC50 ≤500 nM", sum(r["binding_500"] == "Yes" for r in expressed), len(expressed), percent(sum(r["binding_500"] == "Yes" for r in expressed), len(expressed))),
-    ("Candidates with RNA alternate-read count", rna_alt_assessed, len(records), percent(rna_alt_assessed, len(records))),
-    ("Candidates with RNA alternate reads ≥3", sum(r["rna_alt_status"] == "Supported" for r in records), rna_alt_assessed, percent(sum(r["rna_alt_status"] == "Supported" for r in records), rna_alt_assessed)),
-    ("Patients with any expression measurements", sum(r["tpm_assessed"] > 0 for r in patient_rows), 80, percent(sum(r["tpm_assessed"] > 0 for r in patient_rows), 80)),
+    ("Candidates with expression TPM", len(assessed), len(records), pct(len(assessed), len(records))),
+    ("Candidates with transcript TPM", audit["Transcript"], len(records), pct(audit["Transcript"], len(records))),
+    ("Candidates with gene-level TPM proxy", audit["Gene proxy"], len(records), pct(audit["Gene proxy"], len(records))),
+    ("Expression-positive candidates (TPM ≥1)", len(expressed), len(assessed), pct(len(expressed), len(assessed))),
+    ("Below expression threshold (TPM <1)", len(assessed)-len(expressed), len(assessed), pct(len(assessed)-len(expressed), len(assessed))),
+    ("Expression unavailable", len(records)-len(assessed), len(records), pct(len(records)-len(assessed), len(records))),
+    ("Expression-positive and IC50 ≤500 nM", sum(r["binding_500"] == "Yes" for r in expressed), len(expressed), pct(sum(r["binding_500"] == "Yes" for r in expressed), len(expressed))),
+    ("Candidates with RNA alternate-read count", sum(r["rna_alt"] is not None for r in records), len(records), pct(sum(r["rna_alt"] is not None for r in records), len(records))),
+    ("Patients with expression measurements", sum(r["tpm_assessed"] > 0 for r in patient_rows), 80, pct(sum(r["tpm_assessed"] > 0 for r in patient_rows), 80)),
     ("Median TPM among assessed candidates", median([r["expression_tpm"] for r in assessed]), len(assessed), "")
 ]
-cohort_rows = [{"metric": metric, "value": display(value), "denominator": display(denominator) if denominator != "" else "", "percentage": display(percentage) if percentage != "" else ""} for metric, value, denominator, percentage in cohort]
-write_table("01_Neoantigen_Expression_Cohort_Summary.tsv", cohort_rows, ["metric", "value", "denominator", "percentage"])
-
+cohort = [dict(metric=a, value=fmt(b), denominator=fmt(c) if c != "" else "", percentage=fmt(d) if d != "" else "") for a,b,c,d in values]
+write_table("01_Neoantigen_Expression_Cohort_Summary.tsv", cohort, ["metric", "value", "denominator", "percentage"])
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10, "axes.spines.top": False, "axes.spines.right": False})
-fig, ax = plt.subplots(figsize=(7.5, 4.5))
-values = np.log10(1 + np.array([r["expression_tpm"] for r in assessed]))
-ax.hist(values, bins=30, color=plt.cm.viridis(.65), edgecolor="black", linewidth=.5)
-ax.axvline(np.log10(1 + TPM_THRESHOLD), color="black", linestyle="--", linewidth=1, label="TPM = 1")
-ax.set(xlabel="log10(1 + expression TPM)", ylabel="Candidate combinations", title="Available neoantigen-associated RNA expression")
+fig, ax = plt.subplots(figsize=(7.5,4.5))
+ax.hist(np.log10(1+np.array([r["expression_tpm"] for r in assessed])), bins=30, color=plt.cm.viridis(.65), edgecolor="black", linewidth=.5)
+ax.axvline(np.log10(2), color="black", linestyle="--", linewidth=1, label="TPM = 1")
+ax.set(xlabel="log10(1 + expression TPM)", ylabel="Candidate combinations", title="Neoantigen-associated RNA expression")
 ax.legend(frameon=False)
 fig.tight_layout()
 fig.savefig(OUT / "01_Neoantigen_Expression_Distribution.png", dpi=300)
 plt.close(fig)
-
-fig, ax = plt.subplots(figsize=(11.5, 4.6))
-ordered = sorted(patient_rows, key=lambda r: (-r["expressed_pct_assessed"] if r["expressed_pct_assessed"] is not None else float("inf"), r["patient_id"]))
+ordered = sorted(patient_rows, key=lambda r: (-r["expressed_n"] / r["tpm_assessed"] if r["tpm_assessed"] else float("inf"),r["patient_id"]))
 x = np.arange(len(ordered))
-positive_pc = np.array([100 * r["expressed_n"] / r["candidates_total"] for r in ordered])
-below_pc = np.array([100 * (r["tpm_assessed"] - r["expressed_n"]) / r["candidates_total"] for r in ordered])
-missing_pc = np.array([100 * r["unavailable_n"] / r["candidates_total"] for r in ordered])
-for heights, bottom, color, label in [
-    (positive_pc, np.zeros(len(ordered)), plt.cm.viridis(.78), "Expressed (TPM ≥1)"),
-    (below_pc, positive_pc, plt.cm.viridis(.38), "Measured TPM <1"),
-    (missing_pc, positive_pc + below_pc, plt.cm.viridis(.12), "TPM unavailable")
-]:
-    ax.bar(x, heights, bottom=bottom, width=.9, color=color, edgecolor="black", linewidth=.3, label=label)
-ax.set(xlabel="Patients ranked by expression-positive percentage", ylabel="Percentage of all candidates (%)", title="RNA expression classification by patient")
-ax.set_ylim(0, 103)
-ax.legend(frameon=False, fontsize=8, ncol=3, loc="upper center", bbox_to_anchor=(.5, -.15))
-fig.tight_layout()
-fig.savefig(OUT / "02_Neoantigen_Expression_Patient_Percentages.png", dpi=300)
+total = np.array([r["candidates_total"] for r in ordered])
+pos = 100*np.array([r["expressed_n"] for r in ordered])/total
+below = 100*np.array([r["tpm_assessed"]-r["expressed_n"] for r in ordered])/total
+missing = 100*np.array([r["unavailable_n"] for r in ordered])/total
+fig, ax = plt.subplots(figsize=(max(16,len(ordered)*.23),6))
+for heights, bottom, color, label in [(pos,np.zeros(len(x)),plt.cm.viridis(.78),"TPM ≥1"),(below,pos,plt.cm.viridis(.38),"TPM <1"),(missing,pos+below,plt.cm.viridis(.12),"Unavailable")]:
+    ax.bar(x,heights,bottom=bottom,width=.88,color=color,edgecolor="black",linewidth=.3,label=label)
+ax.set(ylabel="Percentage of all candidates (%)",title="RNA expression classification by patient",ylim=(0,105))
+ax.set_xticks(x)
+ax.set_xticklabels([r["patient_id"] for r in ordered],rotation=90,fontsize=7)
+ax.legend(frameon=False,ncol=3,loc="upper center",bbox_to_anchor=(.5,1.10))
+fig.subplots_adjust(bottom=.32,top=.87,left=.055,right=.99)
+fig.savefig(OUT / "02_Neoantigen_Expression_Patient_Percentages.png",dpi=300)
 plt.close(fig)
-
-fig, ax = plt.subplots(figsize=(11.5, 4.5))
-ordered = sorted(patient_rows, key=lambda r: (-r["expressed_n"], r["patient_id"]))
-ax.bar(np.arange(len(ordered)), [r["expressed_n"] for r in ordered], width=.85, color=plt.cm.viridis(.65), edgecolor="black", linewidth=.4)
-ax.set(xlabel="Patients ranked by expression-positive candidate burden", ylabel="Candidates with TPM ≥1", title="Expression-supported candidate burden by patient")
-fig.tight_layout()
-fig.savefig(OUT / "03_Neoantigen_Expression_Patient_Burden.png", dpi=300)
+ordered = sorted(patient_rows,key=lambda r:(-r["expressed_n"],r["patient_id"]))
+x = np.arange(len(ordered))
+fig, ax = plt.subplots(figsize=(max(16,len(ordered)*.23),6))
+ax.bar(x,[r["expressed_n"] for r in ordered],width=.85,color=plt.cm.viridis(.65),edgecolor="black",linewidth=.4)
+ax.set(ylabel="Candidates with TPM ≥1",title="Expression-supported candidate burden by patient")
+ax.set_xticks(x)
+ax.set_xticklabels([r["patient_id"] for r in ordered],rotation=90,fontsize=7)
+fig.subplots_adjust(bottom=.32,top=.91,left=.055,right=.99)
+fig.savefig(OUT / "03_Neoantigen_Expression_Patient_Burden.png",dpi=300)
 plt.close(fig)
-
-make_doc(cohort_rows, patient_rows, source_rows)
+make_doc(cohort,patient_rows,audit)
 with (OUT / "06_Analysis_Metadata.json").open("w") as f:
-    json.dump({"patients": 80, "candidate_rows": raw_total, "distinct_candidates": len(records), "expression_tpm_threshold": TPM_THRESHOLD, "rna_alt_read_threshold": RNA_ALT_THRESHOLD, "binding_ic50_threshold_nm": BINDING_THRESHOLD, "expression_assessed": len(assessed), "expression_positive": len(expressed), "transcript_tpm_records": transcript_assessed, "gene_proxy_tpm_records": gene_proxy, "rna_alt_count_assessed": rna_alt_assessed, "note": "TPM reflects RNA expression of a transcript or gene, not necessarily expression of the mutant allele. RNA mutant allele support is reported separately when available. Missing expression values are not zeros."}, f, indent=2)
-print("Patients:", len(patient_rows))
-print("Distinct candidates:", len(records))
-print("Expression TPM assessed:", len(assessed))
-print("Transcript TPM:", transcript_assessed)
-print("Gene-level TPM proxy:", gene_proxy)
-print("Expressed (TPM ≥1):", len(expressed))
-print("RNA ALT read counts assessed:", rna_alt_assessed)
+    json.dump(dict(patients=80,raw_rows=raw_total,distinct_candidates=len(records),expression_tpm_threshold=TPM_THRESHOLD,binding_threshold_nm=BINDING_THRESHOLD,expression_assessed=len(assessed),expression_positive=len(expressed),transcript_tpm_records=audit["Transcript"],gene_proxy_tpm_records=audit["Gene proxy"],unavailable_tpm_records=audit["Unavailable"],expression_source="StringTie 3.0.3; GENCODE v47; tumor genomic RNA-seq BAM",caution="Transcript or gene TPM does not establish expression of the mutant allele. Highest TPM of matched candidate transcripts used."),f,indent=2)
+print("Patients:",len(patient_rows))
+print("Unique mutation-peptide-HLA candidates:",len(records))
+print("TPM assessed:",len(assessed))
+print("Transcript TPM matched:",audit["Transcript"])
+print("Gene TPM proxy:",audit["Gene proxy"])
+print("TPM unavailable:",audit["Unavailable"])
+print("TPM >=1:",len(expressed))
 print("Validation: PASS")
-print("Outputs:", OUT)
+print("Outputs:",OUT)

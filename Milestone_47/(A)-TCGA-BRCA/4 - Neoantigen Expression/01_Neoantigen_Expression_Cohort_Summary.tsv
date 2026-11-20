@@ -1,0 +1,13 @@
+metric	value	denominator	percentage
+Patients	80		
+Distinct mutation–peptide–HLA candidates	5533		
+Candidates with expression TPM	5533	5533	100.00
+Candidates with transcript TPM	5532	5533	99.98
+Candidates with gene-level TPM proxy	1	5533	0.02
+Expression-positive candidates (TPM ≥1)	2789	5533	50.41
+Below expression threshold (TPM <1)	2744	5533	49.59
+Expression unavailable	0	5533	0.00
+Expression-positive and IC50 ≤500 nM	1875	2789	67.23
+Candidates with RNA alternate-read count	0	5533	0.00
+Patients with expression measurements	80	80	100.00
+Median TPM among assessed candidates	1.05	5533	
