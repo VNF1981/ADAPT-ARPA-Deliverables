@@ -1,0 +1,2 @@
+lost_recognized	lost_screened	retained_recognized	retained_screened	fisher_odds_ratio	fisher_two_sided_p	note
+383	833	352	754	0.9720075757575758	0.8010773655163118	Descriptive pooled candidate test; multiple pMHC per patient and different TCR opportunity mean observations are not independent.

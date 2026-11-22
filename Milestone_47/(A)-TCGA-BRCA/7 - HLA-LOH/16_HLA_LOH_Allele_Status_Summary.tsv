@@ -1,0 +1,8 @@
+allele_state	n_pMHC	n_patients	n_HLA_binders	n_TCR_screened	n_TCR_prioritized	n_tier_A_B	n_tier_A_B_expression_supported	recognition_fraction_among_screened
+lost_allele	852	46	598	833	383	277	0	0.4597839135654262
+retained_allele	767	44	510	754	352	237	0	0.46684350132625996
+ambiguous_two_field	84	3	37	84	39	26	0	0.4642857142857143
+unmatched_allele	516	29	360	507	268	185	0	0.5285996055226825
+unresolved_allele	0	0	0	0	0	0	0	
+no_LOH_call	3286	69	2170	3255	880	557	0	0.27035330261136714
+no_SpecHLA_result	26	1	19	26	26	19	0	1.0
